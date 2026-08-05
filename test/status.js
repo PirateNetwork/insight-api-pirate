@@ -187,4 +187,104 @@ describe('Status', function() {
       status.version(req, res);
     });
   });
+
+  describe('/peers', function() {
+    it('should return the peer list from getPeerInfo', function(done) {
+      var peers = [
+        {addr: '203.0.113.5:45452', network: 'ipv4', inbound: false, subver: '/Dabloon:5.9.3/'},
+        {addr: 'gwsolmvu2iniz6co4gplc7rkzf7657vo6gj6lo53m6pci4ya6e4a.b32.i2p:45452', network: 'i2p', inbound: true}
+      ];
+      var node = {
+        services: {
+          bitcoind: {
+            getPeerInfo: sinon.stub().callsArgWith(0, null, peers)
+          }
+        }
+      };
+
+      var req = {};
+      var res = {
+        jsonp: function(data) {
+          should(data).eql({peers: peers});
+          done();
+        }
+      };
+
+      var status = new StatusController(node);
+      status.peers(req, res);
+    });
+
+    it('should handle errors from getPeerInfo', function(done) {
+      var node = {
+        services: {
+          bitcoind: {
+            getPeerInfo: sinon.stub().callsArgWith(0, new Error('test error'))
+          }
+        }
+      };
+
+      var req = {};
+      var res = {};
+      var status = new StatusController(node);
+      status.common.handleErrors = function(err, res) {
+        should.exist(err);
+        done();
+      };
+
+      status.peers(req, res);
+    });
+  });
+
+  describe('/chain-stats', function() {
+    it('should return the stats from getChainStats', function(done) {
+      var stats = {
+        height: 232948,
+        difficulty: 165198505.2363136,
+        supply: 196213798,
+        networkSolps: 8000000,
+        reward: 0.5,
+        nextReward: 0.5,
+        nextHalvingHeight: 2802000,
+        nextHalvingEta: '2026-11-06T20:00:00.000Z'
+      };
+      var node = {
+        services: {
+          bitcoind: {
+            getChainStats: sinon.stub().callsArgWith(0, null, stats)
+          }
+        }
+      };
+
+      var req = {};
+      var res = {
+        jsonp: function(data) {
+          should(data).eql(stats);
+          done();
+        }
+      };
+
+      var status = new StatusController(node);
+      status.chainStats(req, res);
+    });
+
+    it('should handle errors from getChainStats', function(done) {
+      var node = {
+        services: {
+          bitcoind: {
+            getChainStats: sinon.stub().callsArgWith(0, new Error('test error'))
+          }
+        }
+      };
+
+      var req = {};
+      var res = {};
+      var status = new StatusController(node);
+      status.common.handleErrors = function(err, res) {
+        should.exist(err);
+        done();
+      };
+
+      status.chainStats(req, res);
+    });
+  });
 });

@@ -6,21 +6,25 @@ var proxyquire = require('proxyquire');
 var EventEmitter = require('events').EventEmitter;
 var CurrencyController = require('../lib/currency');
 
-// The real endpoint (CoinMarketCap v1) returns a JSON array of ticker
-// objects, not a bare object - lib/currency.js reads `[0].price_usd`.
-var coinmarketcapData = [
-  {
-    id: 'komodo',
-    symbol: 'KMD',
-    name: 'Komodo',
-    price_usd: '237.90',
-    price_btc: '0.0123'
+// The real endpoint (CoinGecko's simple price API, with
+// include_market_cap=true) returns
+// {"pirate-chain": {"usd": N, "usd_market_cap": N}} - lib/currency.js
+// reads that shape.
+var coingeckoData = {
+  'pirate-chain': {
+    usd: 237.90,
+    usd_market_cap: 47851940
   }
-];
+};
 
 function makeFakeHttps(statusCode, body, err) {
   return {
-    get: function(url, callback) {
+    get: function(url, options, callback) {
+      // lib/currency.js now calls https.get(url, options, callback) to
+      // set a User-Agent header - support both that and the 2-arg form.
+      if (typeof options === 'function') {
+        callback = options;
+      }
       var res = new EventEmitter();
       var req = new EventEmitter();
       if (err) {
@@ -58,7 +62,7 @@ describe('Currency', function() {
 
   it('will retrieve a fresh value', function(done) {
     var TestCurrencyController = proxyquire('../lib/currency', {
-      https: makeFakeHttps(200, JSON.stringify(coinmarketcapData))
+      https: makeFakeHttps(200, JSON.stringify(coingeckoData))
     });
     var node = {
       log: {
@@ -74,6 +78,7 @@ describe('Currency', function() {
         response.status.should.equal(200);
         should.exist(response.data.bitstamp);
         response.data.bitstamp.should.equal(237.90);
+        response.data.marketCapUsd.should.equal(47851940);
         done();
       }
     };
