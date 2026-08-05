@@ -8,10 +8,10 @@ var _ = require('lodash');
 
 describe('Messages', function() {
 
-  var privateKey = bitcore.PrivateKey.fromWIF('cQwApHAg8hw9AZuxiU4a7g9kFWdaemhPxVZXWiAKgJTx6dPP32fN');
-  var address = 'mswTKCE2tYSFvUNnNPBKZfeNmugYL1rZMx';
-  var badAddress = 'mswTKCE2tYSFvUNnNPBKZfeNmuhYL1rZMm';
-  var signature = 'IA4sIwhcLMPPsYtB8tN0PI+aQuwDyl+/4Ksa89llNSAeVaRdMyyIxpo1H5N3GHbPl9LQqZ7CvaokeQgsOkK9fn4=';
+  var privateKey = bitcore.PrivateKey.fromWIF('L52Mfs2CRxekTTn61YE2Lzov7QufnqLJVBugPsTo7vuFtym8KsFD');
+  var address = '168XK817bmNqXP27isV9TSavWnVbkuhUCa';
+  var badAddress = '168XK817bmNqXP27isV9TSavWnVbkuhUCb';
+  var signature = 'IE/mwXJWS4uRd26rHPFjNMShjRwf2UP0xEBI/JxXhbo7Qf+MxurpmQdiuL102PEjgoRYIR71+06NxVD2TIRD0kk=';
   var message = 'cellar door';
 
   it('will verify a message (true)', function(done) {

@@ -6,77 +6,142 @@ var BlockController = require('../lib/blocks');
 var bitcore = require('bitcore-lib-pirate');
 var _ = require('lodash');
 
-var blocks = require('./data/blocks.json');
+// None of the block fixtures in this file are from a real Pirate (or
+// Bitcoin) block. They're hand-built, well-formed Equihash-format blocks
+// (see bitcore-lib-pirate's BlockHeader._fromBufferReader for the format)
+// used purely to exercise BlockController's transform/summary logic. This
+// suite was adapted from the upstream Bitcoin insight-api test vectors,
+// which embedded several real historical Bitcoin blocks that don't fit
+// this fork's actual block format (a fixed 80-byte Bitcoin header with a
+// 4-byte nonce, vs. Pirate's version + prevHash + merkleRoot + reserved +
+// time + bits + 32-byte nonce + variable-length solution) and referenced
+// Bitcoin-era mining pools no longer relevant to this project's
+// pools.json - no real Pirate chain data was available when this suite
+// was adapted.
 
-var blockIndexes = {
-  '0000000000000afa0c3c0afd450c793a1e300ec84cbe9555166e06132f19a8f7': {
-    hash: '0000000000000afa0c3c0afd450c793a1e300ec84cbe9555166e06132f19a8f7',
-    chainWork: '0000000000000000000000000000000000000000000000054626b1839ade284a',
-    prevHash: '00000000000001a55f3214e9172eb34b20e0bc5bd6b8007f3f149fca2c8991a4',
-    nextHash: '000000000001e866a8057cde0c650796cb8a59e0e6038dc31c69d7ca6649627d',
-    confirmations: 119,
-    height: 533974
-  },
-  '000000000008fbb2e358e382a6f6948b2da24563bba183af447e6e2542e8efc7': {
-    hash: '000000000008fbb2e358e382a6f6948b2da24563bba183af447e6e2542e8efc7',
-    chainWork: '00000000000000000000000000000000000000000000000544ea52e1575ca753',
-    prevHash: '00000000000006bd8fe9e53780323c0e85719eca771022e1eb6d10c62195c441',
-    confirmations: 119,
-    height: 533951
-  },
-  '00000000000006bd8fe9e53780323c0e85719eca771022e1eb6d10c62195c441': {
-    hash: '00000000000006bd8fe9e53780323c0e85719eca771022e1eb6d10c62195c441',
-    chainWork: '00000000000000000000000000000000000000000000000544ea52e0575ba752',
-    prevHash: '000000000001b9c41e6c4a7b81a068b50cf3f522ee4ac1e942e75ec16e090547',
-    height: 533950
-  },
-  '000000000000000004a118407a4e3556ae2d5e882017e7ce526659d8073f13a4': {
-    hash: '000000000000000004a118407a4e3556ae2d5e882017e7ce526659d8073f13a4',
-    prevHash: '00000000000000000a9d74a7b527f7b995fc21ceae5aa21087b443469351a362',
-    height: 375493
-  },
-  533974: {
-    hash: '0000000000000afa0c3c0afd450c793a1e300ec84cbe9555166e06132f19a8f7',
-    chainWork: '0000000000000000000000000000000000000000000000054626b1839ade284a',
-    prevHash: '00000000000001a55f3214e9172eb34b20e0bc5bd6b8007f3f149fca2c8991a4',
-    height: 533974
-  }
+var PAY_SCRIPT = '76a914140a14575ad5d95bcf2e665b5c98121d7d8a03d488ac';
+
+function makeCoinbaseTx(scriptHex) {
+  return new bitcore.Transaction().fromObject({
+    version: 1,
+    inputs: [{
+      prevTxId: '0000000000000000000000000000000000000000000000000000000000000000',
+      outputIndex: 4294967295,
+      sequenceNumber: 4294967295,
+      script: scriptHex
+    }],
+    outputs: [{satoshis: 10000, script: PAY_SCRIPT}],
+    nLockTime: 0
+  });
+}
+
+function makeSimpleTx(seedByte) {
+  return new bitcore.Transaction().fromObject({
+    version: 1,
+    inputs: [{
+      prevTxId: new Buffer(32).fill(seedByte).toString('hex'),
+      outputIndex: 0,
+      sequenceNumber: 4294967295,
+      script: ''
+    }],
+    outputs: [{satoshis: 1000, script: PAY_SCRIPT}],
+    nLockTime: 0
+  });
+}
+
+function makeHeader(merkleRoot, time) {
+  return new bitcore.BlockHeader({
+    version: 4,
+    prevHash: new Buffer(32).fill(0x11),
+    merkleRoot: merkleRoot,
+    reserved: new Buffer(32).fill(0),
+    time: time,
+    bits: 0x200fffff, // an easy, regtest-style minimum difficulty target
+    nonce: new Buffer(32).fill(0),
+    solution: new Buffer(40).fill(0x44)
+  });
+}
+
+// Computing a real merkle root requires knowing the transactions first,
+// so build a throwaway block against a zero-filled header purely to
+// borrow Block's merkle-tree logic, then build the real header fresh.
+function makeBlock(txs, time) {
+  var scratchBlock = new bitcore.Block({header: makeHeader(new Buffer(32).fill(0), time), transactions: txs});
+  var header = makeHeader(scratchBlock.getMerkleRoot(), time);
+  return new bitcore.Block({header: header, transactions: txs});
+}
+
+// blockA: main "block data should be correct" fixture - a coinbase plus
+// two ordinary transactions, no pool signature in the coinbase script.
+var blockA = makeBlock([makeCoinbaseTx('03d6250800'), makeSimpleTx(0x22), makeSimpleTx(0x33)], 1440987503);
+
+// blockB: "block pool info should be correct" fixture - coinbase script
+// contains a real, current pools.json search string (Bitfly).
+var blockB = makeBlock([makeCoinbaseTx(new Buffer('/flypool/', 'utf8').toString('hex'))], 1440990000);
+
+// blockC/blockD: "/blocks route" list fixtures - coinbase scripts contain
+// another two real, current pools.json search strings (Zmine, CoinBlockers).
+var blockC = makeBlock([makeCoinbaseTx(new Buffer('{ZMINE.IO}', 'utf8').toString('hex'))], 1440978683);
+var blockD = makeBlock([makeCoinbaseTx(new Buffer('coinblockers.com - https://coinblockers.com', 'utf8').toString('hex'))], 1440977479);
+
+var blockIndexes = {};
+blockIndexes[blockA.hash] = {
+  hash: blockA.hash,
+  chainWork: '0000000000000000000000000000000000000000000000000000000000000001',
+  prevHash: '1111111111111111111111111111111111111111111111111111111111111111',
+  nextHash: '2222222222222222222222222222222222222222222222222222222222222222',
+  confirmations: 119,
+  height: 533974
 };
+blockIndexes[blockB.hash] = {
+  hash: blockB.hash,
+  prevHash: '1111111111111111111111111111111111111111111111111111111111111111',
+  height: 375493
+};
+blockIndexes[blockC.hash] = {
+  hash: blockC.hash,
+  chainWork: '0000000000000000000000000000000000000000000000000000000000000002',
+  prevHash: blockD.hash,
+  confirmations: 119,
+  height: 533951
+};
+blockIndexes[blockD.hash] = {
+  hash: blockD.hash,
+  chainWork: '0000000000000000000000000000000000000000000000000000000000000003',
+  prevHash: '1111111111111111111111111111111111111111111111111111111111111111',
+  height: 533950
+};
+blockIndexes[533974] = blockIndexes[blockA.hash];
 
 describe('Blocks', function() {
   describe('/blocks/:blockHash route', function() {
     var insight = {
-      'hash': '0000000000000afa0c3c0afd450c793a1e300ec84cbe9555166e06132f19a8f7',
+      'hash': blockA.hash,
       'confirmations': 119,
-      'size': 1011,
+      'size': blockA.toBuffer().length,
       'height': 533974,
-      'version': 536870919,
-      'merkleroot': 'b06437355844b8178173f3e18ca141472e4b0861daa81ef0f701cf9e51f0283e',
-      'tx': [
-        '25a988e54b02e0e5df146a0f8fa7b9db56210533a9f04bdfda5f4ceb6f77aadd',
-        'b85334bf2df35c6dd5b294efe92ffc793a78edff75a2ca666fc296ffb04bbba0',
-        '2e01c7a4a0e335112236b711c4aaddd02e8dc59ba2cda416e8f80ff06dddd7e1'
-      ],
+      'version': 4,
+      'merkleroot': blockA.toObject().header.merkleRoot,
+      'tx': blockA.toObject().transactions.map(function(t) { return t.hash; }),
       'time': 1440987503,
-      'nonce': 1868753784,
-      'bits': '1a0cf267',
-      'difficulty': 1295829.93087696,
-      'chainwork': '0000000000000000000000000000000000000000000000054626b1839ade284a',
-      'previousblockhash': '00000000000001a55f3214e9172eb34b20e0bc5bd6b8007f3f149fca2c8991a4',
-      'nextblockhash': '000000000001e866a8057cde0c650796cb8a59e0e6038dc31c69d7ca6649627d',
-      'reward': 12.5,
+      'nonce': '0000000000000000000000000000000000000000000000000000000000000000',
+      'solution': '44444444444444444444444444444444444444444444444444444444444444444444444444444444',
+      'bits': '200fffff',
+      'difficulty': blockA.header.getDifficulty(),
+      'chainwork': '0000000000000000000000000000000000000000000000000000000000000001',
+      'previousblockhash': '1111111111111111111111111111111111111111111111111111111111111111',
+      'nextblockhash': '2222222222222222222222222222222222222222222222222222222222222222',
+      'reward': 0.0001,
       'isMainChain': true,
       'poolInfo': {}
     };
 
-    var bitcoreBlock = bitcore.Block.fromBuffer(new Buffer(blocks['0000000000000afa0c3c0afd450c793a1e300ec84cbe9555166e06132f19a8f7'], 'hex'));
-
     var node = {
       log: sinon.stub(),
-      getBlock: sinon.stub().callsArgWith(1, null, bitcoreBlock),
+      getBlock: sinon.stub().callsArgWith(1, null, blockA),
       services: {
         bitcoind: {
-          getBlockHeader: sinon.stub().callsArgWith(1, null, blockIndexes['0000000000000afa0c3c0afd450c793a1e300ec84cbe9555166e06132f19a8f7']),
+          getBlockHeader: sinon.stub().callsArgWith(1, null, blockIndexes[blockA.hash]),
           isMainChain: sinon.stub().returns(true),
           height: 534092
         }
@@ -85,10 +150,9 @@ describe('Blocks', function() {
 
     it('block data should be correct', function(done) {
       var controller = new BlockController({node: node});
-      var hash = '0000000000000afa0c3c0afd450c793a1e300ec84cbe9555166e06132f19a8f7';
       var req = {
         params: {
-          blockHash: hash
+          blockHash: blockA.hash
         }
       };
       var res = {};
@@ -102,13 +166,12 @@ describe('Blocks', function() {
     });
 
     it('block pool info should be correct', function(done) {
-      var block = bitcore.Block.fromString(blocks['000000000000000004a118407a4e3556ae2d5e882017e7ce526659d8073f13a4']);
       var node = {
         log: sinon.stub(),
-        getBlock: sinon.stub().callsArgWith(1, null, block),
+        getBlock: sinon.stub().callsArgWith(1, null, blockB),
         services: {
           bitcoind: {
-            getBlockHeader: sinon.stub().callsArgWith(1, null, blockIndexes['000000000000000004a118407a4e3556ae2d5e882017e7ce526659d8073f13a4']),
+            getBlockHeader: sinon.stub().callsArgWith(1, null, blockIndexes[blockB.hash]),
             isMainChain: sinon.stub().returns(true),
             height: 534092
           }
@@ -117,19 +180,16 @@ describe('Blocks', function() {
       var controller = new BlockController({node: node});
       var req = {
         params: {
-          blockHash: hash
+          blockHash: blockB.hash
         }
       };
       var res = {};
       var next = function() {
         should.exist(req.block);
-        var block = req.block;
-        req.block.poolInfo.poolName.should.equal('Discus Fish');
-        req.block.poolInfo.url.should.equal('http://f2pool.com/');
+        req.block.poolInfo.poolName.should.equal('Bitfly');
+        req.block.poolInfo.url.should.equal('https://zcash.flypool.org/');
         done();
       };
-
-      var hash = '000000000000000004a118407a4e3556ae2d5e882017e7ce526659d8073f13a4';
 
       controller.block(req, res, next);
     });
@@ -142,24 +202,24 @@ describe('Blocks', function() {
       'blocks': [
         {
           'height': 533951,
-          'size': 206,
-          'hash': '000000000008fbb2e358e382a6f6948b2da24563bba183af447e6e2542e8efc7',
+          'size': blockC.toBuffer().length,
+          'hash': blockC.hash,
           'time': 1440978683,
           'txlength': 1,
           'poolInfo': {
-            'poolName': 'AntMiner',
-            'url': 'https://bitmaintech.com/'
+            'poolName': 'Zmine',
+            'url': 'https://zmine.io/'
           }
         },
         {
           'height': 533950,
-          'size': 206,
-          'hash': '00000000000006bd8fe9e53780323c0e85719eca771022e1eb6d10c62195c441',
+          'size': blockD.toBuffer().length,
+          'hash': blockD.hash,
           'time': 1440977479,
           'txlength': 1,
           'poolInfo': {
-            'poolName': 'AntMiner',
-            'url': 'https://bitmaintech.com/'
+            'poolName': 'CoinBlockers',
+            'url': 'https://kmd.coinblockers.com'
           }
         }
       ],
@@ -174,13 +234,15 @@ describe('Blocks', function() {
       }
     };
 
+    // list() reverses the hashes array before processing it, so the
+    // first getRawBlock call actually corresponds to hashes[1], not [0].
     var stub = sinon.stub();
-    stub.onFirstCall().callsArgWith(1, null, new Buffer(blocks['000000000008fbb2e358e382a6f6948b2da24563bba183af447e6e2542e8efc7'], 'hex'));
-    stub.onSecondCall().callsArgWith(1, null, new Buffer(blocks['00000000000006bd8fe9e53780323c0e85719eca771022e1eb6d10c62195c441'], 'hex'));
+    stub.onFirstCall().callsArgWith(1, null, blockC.toBuffer());
+    stub.onSecondCall().callsArgWith(1, null, blockD.toBuffer());
 
     var hashes = [
-      '00000000000006bd8fe9e53780323c0e85719eca771022e1eb6d10c62195c441',
-      '000000000008fbb2e358e382a6f6948b2da24563bba183af447e6e2542e8efc7'
+      blockD.hash,
+      blockC.hash
     ];
     var node = {
       log: sinon.stub(),
@@ -232,7 +294,7 @@ describe('Blocks', function() {
       var blocks = new BlockController({node: node});
 
       var insight = {
-        'blockHash': '0000000000000afa0c3c0afd450c793a1e300ec84cbe9555166e06132f19a8f7'
+        'blockHash': blockA.hash
       };
 
       var height = 533974;
@@ -259,16 +321,16 @@ describe('Blocks', function() {
     };
     var blocks = new BlockController({node: node});
 
-    it('should give a block reward of 50 * 1e8 for block before first halvening', function() {
-      blocks.getBlockReward(100000).should.equal(50 * 1e8);
+    it('should give the flat block reward for a block before first halvening', function() {
+      blocks.getBlockReward(100000).should.equal(10000);
     });
 
-    it('should give a block reward of 25 * 1e8 for block between first and second halvenings', function() {
-      blocks.getBlockReward(373011).should.equal(25 * 1e8);
+    it('should give the flat block reward for a block between first and second halvenings', function() {
+      blocks.getBlockReward(373011).should.equal(10000);
     });
 
-    it('should give a block reward of 12.5 * 1e8 for block between second and third halvenings', function() {
-      blocks.getBlockReward(500000).should.equal(12.5 * 1e8);
+    it('should give the flat block reward for a block between second and third halvenings', function() {
+      blocks.getBlockReward(500000).should.equal(10000);
     });
   });
 });

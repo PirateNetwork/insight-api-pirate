@@ -3,20 +3,44 @@
 var should = require('should');
 var sinon = require('sinon');
 var proxyquire = require('proxyquire');
+var EventEmitter = require('events').EventEmitter;
 var CurrencyController = require('../lib/currency');
 
-describe('Currency', function() {
+// The real endpoint (CoinMarketCap v1) returns a JSON array of ticker
+// objects, not a bare object - lib/currency.js reads `[0].price_usd`.
+var coinmarketcapData = [
+  {
+    id: 'komodo',
+    symbol: 'KMD',
+    name: 'Komodo',
+    price_usd: '237.90',
+    price_btc: '0.0123'
+  }
+];
 
-  var bitstampData = {
-    high: 239.44,
-    last: 237.90,
-    timestamp: 1443798711,
-    bid: 237.61,
-    vwap: 237.88,
-    volume: 21463.27736401,
-    low: 235.00,
-    ask: 237.90
+function makeFakeHttps(statusCode, body, err) {
+  return {
+    get: function(url, callback) {
+      var res = new EventEmitter();
+      var req = new EventEmitter();
+      if (err) {
+        setImmediate(function() {
+          req.emit('error', err);
+        });
+        return req;
+      }
+      setImmediate(function() {
+        callback(res);
+        res.emit('data', body);
+        res.emit('end');
+      });
+      res.statusCode = statusCode;
+      return req;
+    }
   };
+}
+
+describe('Currency', function() {
 
   it.skip('will make live request to bitstamp', function(done) {
     var currency = new CurrencyController({});
@@ -34,7 +58,7 @@ describe('Currency', function() {
 
   it('will retrieve a fresh value', function(done) {
     var TestCurrencyController = proxyquire('../lib/currency', {
-      request: sinon.stub().callsArgWith(1, null, {statusCode: 200}, JSON.stringify(bitstampData))
+      https: makeFakeHttps(200, JSON.stringify(coinmarketcapData))
     });
     var node = {
       log: {
@@ -58,7 +82,7 @@ describe('Currency', function() {
 
   it('will log an error from request', function(done) {
     var TestCurrencyController = proxyquire('../lib/currency', {
-      request: sinon.stub().callsArgWith(1, new Error('test'))
+      https: makeFakeHttps(null, null, new Error('test'))
     });
     var node = {
       log: {
@@ -82,9 +106,9 @@ describe('Currency', function() {
   });
 
   it('will retrieve a cached value', function(done) {
-    var request = sinon.stub();
+    var getSpy = sinon.spy();
     var TestCurrencyController = proxyquire('../lib/currency', {
-      request: request
+      https: {get: getSpy}
     });
     var node = {
       log: {
@@ -100,7 +124,7 @@ describe('Currency', function() {
         response.status.should.equal(200);
         should.exist(response.data.bitstamp);
         response.data.bitstamp.should.equal(237.90);
-        request.callCount.should.equal(0);
+        getSpy.callCount.should.equal(0);
         done();
       }
     };
