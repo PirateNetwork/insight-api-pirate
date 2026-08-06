@@ -991,7 +991,8 @@ describe('Transactions', function() {
         'outputDescsV4': [],
         'spendDescsV5': [],
         'outputDescsV5': [],
-        'orchardActions': undefined,
+        'orchardActions': [],
+        'ironwoodBundle': undefined,
         'isRBF': false
       };
 
@@ -1020,7 +1021,8 @@ describe('Transactions', function() {
         'outputDescsV4': [],
         'spendDescsV5': [],
         'outputDescsV5': [],
-        'orchardActions': undefined,
+        'orchardActions': [],
+        'ironwoodBundle': undefined,
         'isRBF': false
       };
 
