@@ -66,8 +66,8 @@
   "bitcoreNode": "lib",
   "dependencies": {
     "async": "^3.2.6",
-    "bitcore-lib-pirate": "git+https://git@github.com/piratenetwork/bitcore-lib-pirate#dev-ironwood",
-    "bitcore-message-pirate": "git+https://git@github.com/piratenetwork/bitcore-message-pirate#dev-ironwood",
+    "bitcore-lib-pirate": "git+https://git@github.com/piratenetwork/bitcore-lib-pirate",
+    "bitcore-message-pirate": "git+https://git@github.com/piratenetwork/bitcore-message-pirate",
     "body-parser": "^1.20.6",
     "compression": "^1.8.1",
     "lodash": "^4.18.1",
